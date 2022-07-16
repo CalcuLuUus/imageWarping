@@ -1,0 +1,51 @@
+﻿  源.cpp
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(27): warning C4305: “初始化”: 从“double”到“float”截断
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(28): warning C4305: “初始化”: 从“double”到“float”截断
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(29): warning C4305: “初始化”: 从“double”到“float”截断
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(30): warning C4305: “初始化”: 从“double”到“float”截断
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(33): warning C4305: “初始化”: 从“double”到“float”截断
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(111): warning C4244: “初始化”: 从“double”转换到“float”，可能丢失数据
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(112): warning C4244: “初始化”: 从“double”转换到“float”，可能丢失数据
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(144): warning C4244: “=”: 从“double”转换到“float”，可能丢失数据
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(170): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(193): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(194): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(195): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(196): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(253): warning C4244: “参数”: 从“double”转换到“_Ty”，可能丢失数据
+          with
+          [
+              _Ty=float
+          ]
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(265): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(284): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(316): warning C4244: “初始化”: 从“float”转换到“int”，可能丢失数据
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(385): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(392): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(405): warning C4244: “参数”: 从“double”转换到“_Ty”，可能丢失数据
+          with
+          [
+              _Ty=float
+          ]
+e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(422): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+c:\program files (x86)\microsoft visual studio\2017\community\vc\tools\msvc\14.16.27023\include\utility(239): warning C4244: “初始化”: 从“_Ty”转换到“_Ty1”，可能丢失数据
+          with
+          [
+              _Ty=int
+          ]
+          and
+          [
+              _Ty1=float
+          ]
+  e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(374): note: 参见对正在编译的函数 模板 实例化“std::pair<float,float>::pair<int,int,0>(std::pair<int,int> &&) noexcept”的引用
+  e:\桌面\research\3-imagewarping\cppcode\project1\project1\源.cpp(374): note: 参见对正在编译的函数 模板 实例化“std::pair<float,float>::pair<int,int,0>(std::pair<int,int> &&) noexcept”的引用
+c:\program files (x86)\microsoft visual studio\2017\community\vc\tools\msvc\14.16.27023\include\utility(240): warning C4244: “初始化”: 从“_Ty”转换到“_Ty2”，可能丢失数据
+          with
+          [
+              _Ty=int
+          ]
+          and
+          [
+              _Ty2=float
+          ]
+  Project1.vcxproj -> E:\桌面\research\3-imageWarping\cppcode\Project1\x64\Debug\Project1.exe
