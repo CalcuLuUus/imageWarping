@@ -549,6 +549,31 @@ Mat matchVisualization(Mat Template, Mat background, pair<int, int> location, st
 	return background;
 }
 
+Mat warp_image_cv(Mat img, Mat c_src, Mat c_dst, pair<int, int> dshape = make_pair(-1, -1))
+{
+	/*
+	"""
+    Warping `img` following the sets of key points  from `c_src` to `c_dst`.
+    """
+	*/
+	if (dshape.first == -1)
+	{
+		dshape.first = img.size().height, dshape.second = img.size().width;
+	}
+	Mat theta = tps.tps_theta_from_points(c_src, c_dst, tps_lambda, true);
+	//    # main bottleneck of the time consuming:  tps_grid
+	Mat grid = tps.tps_grid(theta, c_dst, dshape.first, dshape.second);
+	Mat mapx, mapy;
+	vector<Mat> mats;
+	mats.push_back(mapx);
+	mats.push_back(mapy);
+	tps.tps_grid_to_remap(grid, mats, img.size().height, img.size().width);
+	Mat ret;
+	remap(img, ret, mapx, mapy, INTER_CUBIC, IPL_BORDER_REPLICATE);
+	return ret;
+	
+}
+
 int main()
 {
 	vector<string> inf_dir_listdir(1);
