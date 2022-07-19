@@ -5,9 +5,197 @@
 #include <filesystem>
 #include <io.h>
 #include <algorithm>
+#include <direct.h>
+#include <fstream>
+
+namespace TPS {
+	/*
+	Thin plate spline
+	*/
+	const float eps = 1e-8;
+	const int wa_split_pivot = 3;
+
+	void unsq_l2_dist(const float *a, const float *b, float *dst, int n, int m) {
+		// a.shape, b.shape -> [n, 3], [m, 3]
+		// dst.shape -> [n, m]
+		for (uint32_t i = 0; i < n; ++i) {
+			for (uint32_t j = 0; j < m; ++j) {
+				uint32_t dist_idx = i * m + j;
+				uint32_t a_idx = i * 3, b_idx = j * 3;
+				float tmp1 = a[a_idx] - b[b_idx];
+				float tmp2 = a[a_idx + 1] - b[b_idx + 1];
+				dst[dist_idx] = tmp1 * tmp1 + tmp2 * tmp2;
+			}
+		}
+	}
+
+	void wa_split(const float *src, float *dist_w, float &a0, float &a1, float &a2, int n) {
+		memcpy(dist_w, src, (n - 3) * sizeof(float));
+		//for (uint32_t i = 0; i < n - 3; ++ i) dist_w[i] = src[i];
+		a0 = src[n - 3];
+		a1 = src[n - 2];
+		a2 = src[n - 1];
+	}
+
+	float sum_1d(const float *src, int n) {
+		float sum = 0;
+		for (uint32_t i = 0; i < n; ++i) sum += src[i];
+		return sum;
+	}
+
+	void reproduce_w(const float *src, float *dst, int n) {
+		dst[0] = -sum_1d(src, n);
+		memcpy(dst + 1, src, (n - 1) * sizeof(float));
+	}
+
+	cv::Mat du(const cv::Mat &src_x, const cv::Mat &src_c, int n, int m) {
+		cv::Mat dst = cv::Mat::zeros(cv::Size(n, m), CV_32FC1);
+		unsq_l2_dist(src_x.ptr<float>(0), src_c.ptr<float>(0), dst.ptr<float>(0), n, m);
+		cv::Mat log_dst;
+		cv::log(dst + eps, log_dst);
+		return dst.mul(log_dst * 0.5);
+	}
+
+	cv::Mat z(const cv::Mat &src_x, const cv::Mat &src_c, const cv::Mat &theta) {
+		int n = src_x.rows, m = src_c.rows;
+		cv::Mat U = du(src_x, src_c, n, m);
+		int theta_qty = theta.size[0];
+		cv::Mat w = cv::Mat::zeros(cv::Size(theta_qty - 3, 1), CV_32FC1);
+		float a0, a1, a2;
+		wa_split(theta.ptr<float>(0), w.ptr<float>(0), a0, a1, a2, theta_qty);
+
+		bool reduced = theta_qty == src_c.size[0] + 2;
+		cv::Mat b;
+		if (reduced) {
+			cv::Mat w_reduced = cv::Mat::zeros(cv::Size(theta_qty + 1, 1), CV_32FC1);
+			reproduce_w(w.ptr<float>(0), w_reduced.ptr<float>(0), theta_qty);
+			b = U * w_reduced;
+		}
+		else b = U * w;
+		std::vector<cv::Mat> xs(2);
+		cv::split(src_x, xs);
+		return a0 + a1 * xs[0] + a2 * xs[1] + b;
+	}
+
+	void split_pv(const float *src, float *dst_p, float *dst_v, int n) {
+		// dst_v, dst_p are assumed to be all-zero matrix
+		for (uint32_t i = 0; i < n; ++i) {
+			dst_p[i * n + 1] = src[i * n];
+			dst_p[i * n + 2] = src[i * n + 1];
+			dst_v[i] = src[i * n + 2];
+		}
+	}
+
+
+	void construct_A(float *src_k, float *src_p, float *dst, int n) {
+		// dst is assumed to be a [n + 3, n + 3] all-zero matrix
+		// dst_v is assumed to be a [n + 3, 1] all-zero matrix
+		const int k_len = n + 3;
+		for (uint32_t i = 0; i < n; ++i) {
+			for (uint32_t j = 0; j < n; ++j) {
+				dst[i * k_len + j] = src_k[i * n + j];
+			}
+		}
+		for (uint32_t i = 0; i < n; ++i) {
+			dst[i * k_len + n] = src_p[i];
+			dst[i * k_len + n + 1] = src_p[i + n];
+			dst[i * k_len + n + 2] = src_p[i + n * 2];
+			// transposed P
+			dst[n * k_len + i] = src_p[i];
+			dst[n * k_len + i + n] = src_p[i + n];
+			dst[n * k_len + i + n * 2] = src_p[i + n * 2];
+		}
+	}
+
+	void reproduce_theta(const float *src, float *dst, int n) {
+		memcpy(dst + 1, src, (n - 1) * sizeof(float));
+	}
+
+	cv::Mat fit(const cv::Mat &c, float lambd, bool reduced) {
+		int n = c.size[0];
+		cv::Mat U = du(c, c, n, n);
+		cv::Mat K = U + lambd * cv::Mat::eye(cv::Size(n, n), CV_32FC1);
+		cv::Mat A = cv::Mat::zeros(cv::Size(n + 3, n + 3), CV_32FC1);
+		cv::Mat P = cv::Mat::zeros(cv::Size(n, 3), CV_32FC1);
+		cv::Mat v = cv::Mat::zeros(cv::Size(n + 3, 1), CV_32FC1);
+		split_pv(c.ptr<float>(0), P.ptr<float>(0), v.ptr<float>(0), n);
+		construct_A(K.ptr<float>(0), P.ptr<float>(0), A.ptr<float>(0), n);
+		cv::Mat theta = cv::Mat::zeros(cv::Size(n + 3, 1), CV_32FC1);
+		cv::solve(A, v, theta);
+		if (reduced) {
+			cv::Mat theta_reduced = cv::Mat::zeros(cv::Size(n + 2, 1), CV_32FC1);
+			reproduce_theta(theta.ptr<float>(0), theta_reduced.ptr<float>(0), n + 2);
+			return theta_reduced;
+		}
+		else return theta;
+	}
+
+};
+
+void uniform_grid(float *dst, int h, int w) {
+	for (uint32_t j = 0; j < w; ++j) dst[j << 1] = j / float(w - 1);
+	for (uint32_t i = 1; i < h; ++i) {
+		for (uint32_t j = 0; j < w; ++j) {
+			dst[i * w * 2 + j * 2] = dst[j << 1];
+		}
+	}
+	for (uint32_t i = 0; i < h; ++i) dst[i * w * 2 + 1] = i / float(h - 1);
+	for (uint32_t i = 0; i < h; ++i) {
+		for (uint32_t j = 1; j < w; ++j) {
+			dst[i * w * 2 + j * 2 + 1] = dst[i * w * 2 + 1];
+		}
+	}
+}
+
+cv::Mat tps_grid(const cv::Mat &theta, const cv::Mat &c_dst, const cv::Size &dshape) {
+	//bool reduced = c_dst.size[0] + 2 == theta.size[0];
+	cv::Mat ugrid = cv::Mat::zeros(cv::Size(dshape.height * dshape.width, 2), CV_32FC1);
+	uniform_grid(ugrid.ptr<float>(0), dshape.width, dshape.height);
+	std::vector<cv::Mat> thetas(2);
+	cv::split(theta, thetas);
+	cv::Mat dgrid;
+	std::vector<cv::Mat> mats;
+	auto mat1 = TPS::z(ugrid, c_dst, thetas[0]);
+	auto mat2 = TPS::z(ugrid, c_dst, thetas[1]);
+	//cv::merge(std::vector<cv::Mat>({ TPS::z(ugrid, c_dst, thetas[0]), TPS::z(ugrid, c_dst, thetas[1]) }), dgrid);
+	auto grid = dgrid + ugrid;
+	return grid;
+}
+
+void column_stack_split_last(const float *src_c, const float *src_d,
+	float *dst_0, float *dst_1, int n) {
+	for (uint32_t i = 0; i < n; ++i) {
+		dst_0[i * 3] = src_c[i << 1];
+		dst_0[i * 3 + 1] = src_c[i << 1 | 1];
+		dst_0[i * 3 + 2] = src_d[i << 1];
+		dst_1[i * 3] = src_c[i << 1];
+		dst_1[i * 3 + 1] = src_c[i << 1 | 1];
+		dst_1[i * 3 + 2] = src_d[i << 1 | 1];
+	}
+
+}
+
+cv::Mat tps_theta_from_points(const cv::Mat &c_src, const cv::Mat &c_dst, float lambd, bool reduced) {
+	cv::Mat delta = c_src - c_dst;
+	int n = c_src.size[0];
+	cv::Mat dx = cv::Mat::zeros(cv::Size(n, 3), CV_32FC1);
+	cv::Mat dy = cv::Mat::zeros(cv::Size(n, 3), CV_32FC1);
+	column_stack_split_last(c_dst.ptr<float>(0), delta.ptr<float>(0) + n, dx.ptr<float>(0), dy.ptr<float>(0), n);
+	cv::Mat ret;
+	cv::merge(std::vector<cv::Mat>({ TPS::fit(dx, lambd, reduced), TPS::fit(dy, lambd, reduced) }), ret);
+	return ret;
+}
+
+void tps_grid_to_remap(const cv::Mat &grid, std::vector<cv::Mat> &dsts, int size_x, int size_y) {
+	cv::split(grid, dsts);
+	dsts[0] *= size_x;
+	dsts[1] *= size_y;
+}
 
 using namespace cv;
 using namespace std;
+
+const float eps = 1e-6;
 
 /*
 global data
@@ -50,6 +238,15 @@ void showimg(Mat img)
 	waitKey(0);
 }
 
+void mkdir(string path)
+{
+	if (0 != _access(path.c_str(), 0))
+	{
+		// if this folder not exist, create a new one.
+		_mkdir(path.c_str());
+	}
+}
+
 void listdir(string path, vector<string> &files)
 {
 	intptr_t hFile = 0;
@@ -71,7 +268,7 @@ void listdir(string path, vector<string> &files)
 
 bool cmp(float a, float b)
 {
-	return a > b;
+	return a > b + eps;
 }
 
 vector<float> topk(Mat mat, int k)
@@ -80,13 +277,12 @@ vector<float> topk(Mat mat, int k)
 	vector<float> array;
 	for (int i = 0; i < mat.size().width; i++)
 	{
-		array.push_back(mat.at<float>(0, i));
+		array.push_back(mat.at<float>(i));
 	}
 
 	sort(array.begin(), array.end(), cmp);
 	if (array.size() > k)
 	{
-
 		vector<float> new_array;
 		for (int i = 0; i < k; i++)
 		{
@@ -123,13 +319,14 @@ void multiScaleMatchTemplate(Mat foreground, Mat background, int num_scales, flo
 		scales.push_back(val);
 	}
 	scaleMaxVal = -1;
-
+	
 	for (float scale : scales)
 	{
 		// resize the template using a certain scale value
 		Mat tpl;
 		resize(foreground, tpl, Size(min(int(foreground.size().width * scale), background.size().width),
 									min(int(foreground.size().height * scale), background.size().height)));
+
 		Mat result;
 		matchTemplate(background, tpl, result, cv::TM_CCORR_NORMED);
 
@@ -143,7 +340,7 @@ void multiScaleMatchTemplate(Mat foreground, Mat background, int num_scales, flo
 		double minVal, maxVal;
 		Point minLoc, maxLoc;
 		minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
-		if (maxVal > scaleMaxVal)
+		if (maxVal > scaleMaxVal + eps)
 		{
 			scaleMaxDif = topk_diff;
 			scaleMaxVal = maxVal;
@@ -156,35 +353,32 @@ void multiScaleMatchTemplate(Mat foreground, Mat background, int num_scales, flo
 vector<int> argsort(vector<float> &v, int st = -1) // default st = -1, st == -1 dec, st == 0 asc
 {
 	vector<pair<float, int>> tmp;
-	for (int i = 0; i < v.size(); i++)
-	{
-		tmp.push_back(make_pair(v[i], i));
+	for (int i = 0; i < v.size(); i++) {
+		tmp.emplace_back(make_pair(v[i], i));
 	}
-	sort(tmp.begin(), tmp.end());
-	vector<int> ret;
 	if (st == 0)
-	{
-		for (int i = 0; i < v.size(); i++)
-		{
-			ret.push_back(tmp[i].second);
-		}
+		sort(tmp.begin(), tmp.end(), [](const std::pair<float, int> &a, const std::pair<float, int> &b) -> bool {
+		return a.first != b.first ? a.first < b.first : a.second < b.second;
+	});
+	else {
+		sort(tmp.begin(), tmp.end(), [](const std::pair<float, int> &a, const std::pair<float, int> &b) -> bool {
+			return a.first != b.first ? a.first > b.first : a.second < b.second;
+		});
 	}
-	else
-	{
-		for (int i = v.size() - 1; i >= 0; i--)
-		{
-			ret.push_back(tmp[i].second);
-		}
+	vector<int> ret;
+	for (int i = 0; i < v.size(); i++) {
+		ret.push_back(tmp[i].second);
 	}
+
 	return ret;
 }
 
-vector<int> nms(Mat &boxes, vector<float> &scores, float nms_thr)
+vector<int> nms(Mat boxes, vector<float> scores, float nms_thr)
 {
-	Mat x1 = boxes.col(0).clone().reshape(1, 1);
-	Mat y1 = boxes.col(1).clone().reshape(1, 1);
-	Mat x2 = boxes.col(2).clone().reshape(1, 1);
-	Mat y2 = boxes.col(3).clone().reshape(1, 1);
+	Mat x1 = boxes.col(0).clone().reshape(0, 1);
+	Mat y1 = boxes.col(1).clone().reshape(0, 1);
+	Mat x2 = boxes.col(2).clone().reshape(0, 1);
+	Mat y2 = boxes.col(3).clone().reshape(0, 1);
 
 	Mat areas = (x2 - x1 + 1).mul(y2 - y1 + 1);
 	vector<int> order = argsort(scores, -1);
@@ -224,7 +418,7 @@ vector<int> nms(Mat &boxes, vector<float> &scores, float nms_thr)
 		vector<int> neworder;
 		for (int j = 0; j < ovr.size().width; j++)
 		{
-			if (ovr.at<float>(j) <= nms_thr)
+			if (ovr.at<float>(j) <= nms_thr + eps)
 			{
 				int ind = j;
 				neworder.push_back(order[ind + 1]);
@@ -297,6 +491,21 @@ Mat gen_bboxes_from_edge_nms(Mat edge_map)
 		saveShow(edge_map, 'Edge BBoxes')
 		# cv2.waitKey(0)
 	*/
+	/* for debug*/
+	if (vis_edge_bbox_checked)
+	{
+		Mat edgemap = edge_map.clone();
+		vector<Mat> mats(3, edgemap);
+		Mat visu;
+		merge(mats, visu);
+		for (int row = 0; row < bboxes_nms.size().height; row++)
+		{
+			rectangle(visu, Rect(Point(bboxes_nms.at<int>(row, 1), bboxes_nms.at<int>(row, 0)), Point(bboxes_nms.at<int>(row, 3), bboxes_nms.at<int>(row, 2))),
+				Scalar(0, 0, 255), 2);
+		}
+		showimg(visu);
+	}
+	
 	return bboxes_nms;
 }
 
@@ -334,7 +543,7 @@ pair<Mat, Mat> resampling_keypoints(Mat edge_map1, Mat edge_map2, Mat b1, Mat b2
 
 	//# obtaining pixel indices of the intersected region
 	Mat edge_map1_rect = edge_map1(Range(b1.at<int>(0), b1.at<int>(2) - shift_x), Range(b1.at<int>(1), b1.at<int>(3) - shift_y));
-	Mat edge_map2_rect = edge_map2(Range(b2.at<int>(0), b2.at<int>(2)), Range(b2.at<int>(1), b2.at<int>(3)));
+	Mat edge_map2_rect = edge_map2(Range(b2.at<int>(0), b2.at<int>(2) - shift_x), Range(b2.at<int>(1), b2.at<int>(3) - shift_y));
 
 	Mat edge_map1_mask = Mat(edge_map1_rect.size().height, edge_map1_rect.size().width, CV_8UC1);
 	Mat edge_map2_mask = Mat(edge_map2_rect.size().height, edge_map2_rect.size().width, CV_8UC1);
@@ -374,7 +583,7 @@ pair<Mat, Mat> resampling_keypoints(Mat edge_map1, Mat edge_map2, Mat b1, Mat b2
 			}
 		}
 	}
-	
+
 	//# shift the intersection indices w.r.t the whole edge map
 	Mat edge_centers1 = Mat(edge_centers.size(), 2, CV_32FC1, Scalar(0));
 	for (int i = 0; i < edge_centers.size(); i++)
@@ -395,7 +604,7 @@ pair<Mat, Mat> resampling_keypoints(Mat edge_map1, Mat edge_map2, Mat b1, Mat b2
 	for (int i = 0; i < indices[0].size(); i++)
 	{
 		int x = indices[0][i], y = indices[1][i];
-		weights.push_back((edge_map1.at<uchar>(x, y) + edge_map2.at<uchar>(x, y)) / (255. * 2));
+		weights.push_back(((int)edge_map1.at<uchar>(x, y) + (int)edge_map2.at<uchar>(x, y)) / (255. * 2));
 	}
 	
 	Mat edge_bboxes1 = Mat(edge_centers1.size().height, 4, CV_32FC1, Scalar(0));
@@ -407,9 +616,13 @@ pair<Mat, Mat> resampling_keypoints(Mat edge_map1, Mat edge_map2, Mat b1, Mat b2
 		edge_bboxes1.at<float>(i, 3) = min(max((float)0, edge_centers1.at<float>(i, 1) + local_ws / 2), (float)b1.at<int>(3));
 	}
 	edge_bboxes1.convertTo(edge_bboxes1, CV_32SC1); 
-
 	//# do NMS for sampled points
-	vector<int> nms_indices = nms(edge_bboxes1, weights, nms_resampling_thres);
+	vector<int> nms_indices;
+	if (edge_bboxes1.size().height) 
+	{
+		nms_indices = nms(edge_bboxes1, weights, nms_resampling_thres);
+	}
+
 	Mat edge_centers_nms1(nms_indices.size(), 2, CV_32FC1), edge_centers_nms2(nms_indices.size(), 2, CV_32FC1);
 	for (int i = 0; i < nms_indices.size(); i++)
 	{
@@ -461,10 +674,12 @@ void tm_registration(Mat &Warped, vector<int> &Rough_match_bbox,
 	rough_match_bbox.push_back(scaleMaxTpl.size().height);
 	rough_match_bbox.push_back(scaleMaxTpl.size().width);
 
+
 	int tH = scaleMaxTpl.size().height, tW = scaleMaxTpl.size().width;
 	int i_l = max(scaleMaxLoc.y, 0), j_l = max(scaleMaxLoc.x, 0);
 	int i_r = min(scaleMaxLoc.y + tH, H), j_r = min(scaleMaxLoc.x + tW, W);
 	Mat background_rm = im_vise_gray(Range(i_l, i_r), Range(j_l, j_r));
+
 
 	// obtaining proposals `bboxes` at the centers of edge of the infrared image
 	Mat foreground_e = scaleMaxTpl.clone();
@@ -475,10 +690,12 @@ void tm_registration(Mat &Warped, vector<int> &Rough_match_bbox,
 	matched_points["vis"] = vector<vector<float>>();
 	int scaleMaxH = background_rm.size().height, scaleMaxW = background_rm.size().width;
 
+
 	for (int bbox_row = 0; bbox_row < bboxes.size().height; bbox_row++)
 	{
 		Mat b;
 		bboxes.row(bbox_row).copyTo(b);
+
 		Mat tpl = foreground_e(Range(b.at<int>(0), b.at<int>(2)), Range(b.at<int>(1), b.at<int>(3)));
 		
 		vector<int> bg_bbox = bbox_scaling(b, bbox_scaling_factor, background_rm.size().height, background_rm.size().width);
@@ -487,16 +704,20 @@ void tm_registration(Mat &Warped, vector<int> &Rough_match_bbox,
 		//# fine-grained matching between the local cross-domain windows.
 		multiScaleMatchTemplate(tpl, bg, 5, 0.05, scaleMaxVal, scaleMaxLoc, scaleMaxTpl, scaleMaxDif);
 
-		if (scaleMaxVal > matching_thres)
+
+		if (scaleMaxVal > matching_thres + eps)
 		{
 			scaleMaxLoc.x = scaleMaxLoc.x + bg_bbox[1];
 			scaleMaxLoc.y = scaleMaxLoc.y + bg_bbox[0];
 			//# resampling more control points from the matched cross-domain edges, in order to
 			//# preserve the structure.
+
 			pair<Mat, Mat> tmpret = resampling_keypoints(foreground_e, background_rm, b.colRange(0, 4),
 				(Mat_<int>(1, 4) << scaleMaxLoc.y, scaleMaxLoc.x, scaleMaxLoc.y + b.at<int>(8), scaleMaxLoc.x + b.at<int>(9)),
 				scaleMaxW, scaleMaxH);
 			Mat sampled_point_inf = tmpret.first, sampled_point_vis = tmpret.second;
+
+
 			for (int i = 0; i < sampled_point_inf.size().height; i++)
 			{
 				vector<float> inf_part, vis_part;
@@ -510,6 +731,8 @@ void tm_registration(Mat &Warped, vector<int> &Rough_match_bbox,
 			}
 		}
 	}
+
+	
 
 	/*
 	# the following lines can be removed.
@@ -556,23 +779,25 @@ Mat warp_image_cv(Mat img, Mat c_src, Mat c_dst, pair<int, int> dshape = make_pa
     Warping `img` following the sets of key points  from `c_src` to `c_dst`.
     """
 	*/
-	if (dshape.first == -1)
+	if (dshape.first == -1 && dshape.second == -1)
 	{
 		dshape.first = img.size().height, dshape.second = img.size().width;
 	}
-	Mat theta = tps.tps_theta_from_points(c_src, c_dst, tps_lambda, true);
+	Mat theta = tps_theta_from_points(c_src, c_dst, tps_lambda, true);
 	//    # main bottleneck of the time consuming:  tps_grid
-	Mat grid = tps.tps_grid(theta, c_dst, dshape.first, dshape.second);
+	Mat grid = tps_grid(theta, c_dst, Size(dshape.first, dshape.second));
 	Mat mapx, mapy;
 	vector<Mat> mats;
 	mats.push_back(mapx);
 	mats.push_back(mapy);
-	tps.tps_grid_to_remap(grid, mats, img.size().height, img.size().width);
+	tps_grid_to_remap(grid, mats, img.size().height, img.size().width);
 	Mat ret;
 	remap(img, ret, mapx, mapy, INTER_CUBIC, IPL_BORDER_REPLICATE);
 	return ret;
 	
 }
+
+
 
 int main()
 {
@@ -582,40 +807,37 @@ int main()
 
 	for (string fn : inf_dir_listdir)
 	{
-		try 
+		//try 
 		{
 			/*test*/
-			infe_path = "./kkx2.JPG";
-			vise_path = "./kkx2.jpg";
+			infe_path = "./1656921335453_inf.png";
+			vise_path = "./1656921335453_vis.png";
 
 			Mat warped_e;
 			vector<int> rough_match_bbox;
 			map<string, vector<vector<float>> > matched_points;
 			float score;
 			tm_registration(warped_e, rough_match_bbox, matched_points, score);
-			/*cout << 22 << endl;
-			cout << "----------inf : " << matched_points["inf"].size() << "---------------" << endl;
+
+
+			/* for debug*/
+			/*Mat combine, infimg = imread(infe_path), visimg = imread(vise_path);
+			hconcat(infimg, visimg, combine);
 			for (int i = 0; i < matched_points["inf"].size(); i++)
 			{
-				cout << matched_points["inf"][i][0] << ' ' << matched_points["inf"][i][1] << endl;
+				
+				Point p1(matched_points["inf"][i][0] * infimg.size().width, matched_points["inf"][i][1] * infimg.size().height);
+				Point p2(matched_points["vis"][i][0] * visimg.size().width + infimg.size().width, matched_points["vis"][i][1] * visimg.size().height);
+				circle(combine, p1, 1, Scalar(255, 0, 0), 2);  
+				circle(combine, p2, 1, Scalar(255, 0, 0), 2);
+				line(combine, p1, p2, Scalar(0, 0, 255), 1);
+				
 			}
-
-			cout << "----------vis : " << matched_points["vis"].size() << "---------------" << endl;
-			for (int i = 0; i < matched_points["vis"].size(); i++)
-			{
-				cout << matched_points["vis"][i][0] << ' ' << matched_points["vis"][i][1] << endl;
-			}
-
-			cout << "----------rough_match_bbox : " << rough_match_bbox.size() << "---------------" << endl;
-			for (auto x : rough_match_bbox)
-			{
-				cout << x << ' ';
-			}
-			cout << endl;*/
+			showimg(combine);*/
 			
 			/*wait for testing*/
-			string inf_path = inf_dir + "/" + fn;
-			string vis_path = vis_dir + "/" + fn;
+			string inf_path = "./1656921335453_pinf.png";
+			string vis_path = "./1656921335453_pvis.png";
 
 			Mat im_inf = imread(inf_path);
 			cvtColor(im_inf, im_inf, CV_BGR2RGB);
@@ -628,123 +850,110 @@ int main()
 
 			int scaleMaxH = background.size().height, scaleMaxW = background.size().width;
 
-			/*
-			# Saving the warped infrared edges.
-			*/
-
-			resize(warped_e, warped_e, Size(480, 360));
+			//# Saving the warped infrared edges.
+			//resize(warped_e, warped_e, Size(480, 360));
 			string newname = fn;
 			int cut = 0;
-			while (newname[cut] != '.')
+			while (newname[cut] != '.' && cut < newname.size())
 			{
 				cut++;
 			}
 			newname = newname.substr(0, cut) + ".png";
 			string dir_path = "results/Seq" + to_string(SeqId) + "_warped_edge/";
 			string fp = "./results/Seq" + to_string(SeqId) + "_warped_edge/" + newname;
-			int ret = system(("mkdir -p " + dir_path).c_str());
-			if (ret && errno == EEXIST)
-			{
-				cerr << "dir << aleardy exist" << endl;
-			}
-			else if (ret == 0)
-			{
-				continue;
-			}
-			else
-			{
-				cout << "fail " << strerror(errno) << endl;
-			}
+
+			/*for debug*/
+			newname = "1.png";
+			mkdir(dir_path);
 			vector <int> compression_params;
 			compression_params.push_back(IMWRITE_PNG_COMPRESSION);
 			compression_params.push_back(0);
-			imwrite(fp, warped_e, compression_params);
+			//imwrite(fp, warped_e, compression_params);
 			
-			/*
-			# Saving the warped infrared images.
-            warped = warp_image_cv(foreground, matched_points['inf'], matched_points['vis'],
-                                   dshape=(scaleMaxH, scaleMaxW))
-            warped = cv2.resize(warped, (480, 360))
-            fp = os.path.join('./results', f'Seq{SeqId}_warped/' + fn.split('.')[0] + '.png')
-            os.makedirs(os.path.dirname(fp), exist_ok=True)
-            cv2.imwrite(fp, warped)
-			*/
+			///*
+			//# Saving the warped infrared images.
+   //         warped = warp_image_cv(foreground, matched_points['inf'], matched_points['vis'],
+   //                                dshape=(scaleMaxH, scaleMaxW))
+   //         warped = cv2.resize(warped, (480, 360))
+   //         fp = os.path.join('./results', f'Seq{SeqId}_warped/' + fn.split('.')[0] + '.png')
+   //         os.makedirs(os.path.dirname(fp), exist_ok=True)
+   //         cv2.imwrite(fp, warped)
+			//*/
 			Mat warped;
 			/*
-			waiting
+			
 			*/
+			Mat matchpoint_inf((int)matched_points["inf"].size(), (int)matched_points["inf"][0].size(), CV_32SC1);
+			Mat matchpoint_vis((int)matched_points["vis"].size(), (int)matched_points["vis"][0].size(), CV_32SC1);
+			for (int i = 0; i < matched_points["inf"].size(); i++)
+			{
+				for (int j = 0; j < matched_points["inf"][0].size(); j++)
+				{
+					matchpoint_inf.at<int>(i, j) = matched_points["inf"][i][j];
+					matchpoint_vis.at<int>(i, j) = matched_points["vis"][i][j];
+				}
+			}
+			warp_image_cv(foreground, matchpoint_inf, matchpoint_vis, make_pair(scaleMaxH, scaleMaxW));
 			resize(warped, warped, Size(480, 360));
 			dir_path = "results/Seq" + to_string(SeqId) + "_warped/";
 			fp = "./results/Seq" + to_string(SeqId) + "_warped/" + newname;
-			int ret = system(("mkdir -p " + dir_path).c_str());
-			if (ret && errno == EEXIST)
-			{
-				cerr << "dir << aleardy exist" << endl;
-			}
-			else if (ret == 0)
-			{
-				continue;
-			}
-			else
-			{
-				cout << "fail " << strerror(errno) << endl;
-			}
+			mkdir(dir_path);
 			imwrite(fp, warped, compression_params);
 
-			/*
-			# Saving the cropped visible images.
-			*/
-			resize(background, background, Size(480, 360));
-			dir_path = "results/Seq" + to_string(SeqId) + "_bg/";
-			fp = "./results/Seq" + to_string(SeqId) + "_bg/" + newname;
-			int ret = system(("mkdir -p " + dir_path).c_str());
-			if (ret && errno == EEXIST)
-			{
-				cerr << "dir << aleardy exist" << endl;
-			}
-			else if (ret == 0)
-			{
-				continue;
-			}
-			else
-			{
-				cout << "fail " << strerror(errno) << endl;
-			}
-			imwrite(fp, background, compression_params);
+			///*
+			//# Saving the cropped visible images.
+			//*/
+			//resize(background, background, Size(480, 360));
+			//dir_path = "results/Seq" + to_string(SeqId) + "_bg/";
+			//fp = "./results/Seq" + to_string(SeqId) + "_bg/" + newname;
+			//int ret = system(("mkdir -p " + dir_path).c_str());
+			//if (ret && errno == EEXIST)
+			//{
+			//	cerr << "dir << aleardy exist" << endl;
+			//}
+			//else if (ret == 0)
+			//{
+			//	continue;
+			//}
+			//else
+			//{
+			//	cout << "fail " << strerror(errno) << endl;
+			//}
+			//imwrite(fp, background, compression_params);
 
-			/*
-			# Saving the registered blended infrared-visible images.
-            warped = cv2.applyColorMap(warped, cv2.COLORMAP_JET)
-            matchVisualization(warped, background, (0, 0))
-            background = cv2.resize(background, (480, 360))
-            fp = os.path.join('./results', f'Seq{SeqId}_blended/' + fn.split('.')[0] + '.png')
-            os.makedirs(os.path.dirname(fp), exist_ok=True)
-            cv2.imwrite(fp, background)
-			*/
-			applyColorMap(warped, warped, COLORMAP_JET);
-			background = matchVisualization(warped, background, make_pair(0, 0));
-			resize(background, background, Size(480, 360));
-			dir_path = "results/Seq" + to_string(SeqId) + "_blended/";
-			fp = "./results/Seq" + to_string(SeqId) + "_blended/" + newname;
-			int ret = system(("mkdir -p " + dir_path).c_str());
-			if (ret && errno == EEXIST)
-			{
-				cerr << "dir << aleardy exist" << endl;
-			}
-			else if (ret == 0)
-			{
-				continue;
-			}
-			else
-			{
-				cout << "fail " << strerror(errno) << endl;
-			}
-			imwrite(fp, background, compression_params);
+			///*
+			//# Saving the registered blended infrared-visible images.
+   //         warped = cv2.applyColorMap(warped, cv2.COLORMAP_JET)
+   //         matchVisualization(warped, background, (0, 0))
+   //         background = cv2.resize(background, (480, 360))
+   //         fp = os.path.join('./results', f'Seq{SeqId}_blended/' + fn.split('.')[0] + '.png')
+   //         os.makedirs(os.path.dirname(fp), exist_ok=True)
+   //         cv2.imwrite(fp, background)
+			//*/
+			//applyColorMap(warped, warped, COLORMAP_JET);
+			//background = matchVisualization(warped, background, make_pair(0, 0));
+			//resize(background, background, Size(480, 360));
+			//dir_path = "results/Seq" + to_string(SeqId) + "_blended/";
+			//fp = "./results/Seq" + to_string(SeqId) + "_blended/" + newname;
+			//int ret = system(("mkdir -p " + dir_path).c_str());
+			//if (ret && errno == EEXIST)
+			//{
+			//	cerr << "dir << aleardy exist" << endl;
+			//}
+			//else if (ret == 0)
+			//{
+			//	continue;
+			//}
+			//else
+			//{
+			//	cout << "fail " << strerror(errno) << endl;
+			//}
+			//imwrite(fp, background, compression_params);
 		}
-		catch(...)
-		{
-			cout << "Exception :" << fn << endl;
-		}
+		//catch(...)
+		//{
+		//	cout << "Exception :" << fn << endl;
+		//}
 	}
 	
 

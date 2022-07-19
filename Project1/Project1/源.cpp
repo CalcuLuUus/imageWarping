@@ -441,120 +441,19 @@
 //
 //}
 //
+//#include <direct.h>
+//
 //int main()
 //{
-//	//vector<string> inf_dir_listdir;
-//	//listdir(inf_dir, inf_dir_listdir);
-//	//sort(inf_dir_listdir.begin(), inf_dir_listdir.end());
+//	string folderPath = "./testFolder";
 //
-//	//infe_path = "./kkx2.JPG";
-//	//vise_path = "./kkx2.jpg";
-//
-//	//Mat im_infe = imread(infe_path);
-//	//cvtColor(im_infe, im_infe, COLOR_BGR2RGB);
-//	//Mat im_infe_gray;
-//	//cvtColor(im_infe, im_infe_gray, COLOR_RGB2GRAY);
-//
-//	//Mat im_vise = imread(vise_path);
-//	//cvtColor(im_vise, im_vise, COLOR_BGR2RGB);
-//	//Mat im_vise_gray;
-//	//cvtColor(im_vise, im_vise_gray, COLOR_RGB2GRAY);
-//
-//	//int W = im_infe.size().width;
-//	//int H = im_infe.size().height;
-//	//Mat background = im_vise_gray.clone();
-//
-//	//float scaleMaxVal;
-//	//Point scaleMaxLoc;
-//	//Mat scaleMaxTpl;
-//	//float scaleMaxDif;
-//	//multiScaleMatchTemplate(im_infe_gray, background, 5, 0.1, scaleMaxVal, scaleMaxLoc, scaleMaxTpl, scaleMaxDif);
-//	//vector<int> rough_match_bbox;
-//	//rough_match_bbox.push_back(scaleMaxLoc.x);
-//	//rough_match_bbox.push_back(scaleMaxLoc.y);
-//	//rough_match_bbox.push_back(scaleMaxTpl.size().height);
-//	//rough_match_bbox.push_back(scaleMaxTpl.size().width);
-//
-//	//int tH = scaleMaxTpl.size().height, tW = scaleMaxTpl.size().width;
-//	//int i_l = max(scaleMaxLoc.y, 0), j_l = max(scaleMaxLoc.x, 0);
-//	//int i_r = min(scaleMaxLoc.y + tH, H), j_r = min(scaleMaxLoc.x + tW, W);
-//	//Mat background_rm = im_vise_gray(Range(i_l, i_r), Range(j_l, j_r));
-//	//
-//
-//	////	// obtaining proposals `bboxes` at the centers of edge of the infrared image
-//	//Mat foreground_e = scaleMaxTpl.clone();
-//	//Mat bboxes = gen_bboxes_from_edge_nms(foreground_e);
-//
-//
-//	//map<string, vector<vector<float>> > matched_points;
-//	//matched_points["inf"] = vector<vector<float>>();
-//	//matched_points["vis"] = vector<vector<float>>();
-//	//int scaleMaxH = background_rm.size().height, scaleMaxW = background_rm.size().width;
-//	//
-//	//Mat b;
-//	//bboxes.row(9).copyTo(b);
-//	//Mat tpl = foreground_e(Range(b.at<int>(0), b.at<int>(2)), Range(b.at<int>(1), b.at<int>(3)));
-//	//vector<int> bg_bbox = bbox_scaling(b, bbox_scaling_factor, background_rm.size().height, background_rm.size().width);
-//	//Mat bg = background_rm(Range(bg_bbox[0], bg_bbox[2]), Range(bg_bbox[1], bg_bbox[3]));
-//
-//	////# fine-grained matching between the local cross-domain windows.
-//	//multiScaleMatchTemplate(tpl, bg, 5, 0.05, scaleMaxVal, scaleMaxLoc, scaleMaxTpl, scaleMaxDif);
-//	//
-//
-//	//if (scaleMaxVal > matching_thres)
-//	//{
-//	//	cout << "IN" << endl;
-//	//	scaleMaxLoc.x = scaleMaxLoc.x + bg_bbox[1];
-//	//	scaleMaxLoc.y = scaleMaxLoc.y + bg_bbox[0];
-//	//	//# resampling more control points from the matched cross-domain edges, in order to
-//	//	//# preserve the structure.
-//	//	pair<Mat, Mat> tmpret = resampling_keypoints(foreground_e, background_rm, b.colRange(0, 4),
-//	//		(Mat_<int>(1, 4) << scaleMaxLoc.y, scaleMaxLoc.x, scaleMaxLoc.y + b.at<int>(8), scaleMaxLoc.x + b.at<int>(9)),
-//	//		scaleMaxW, scaleMaxH);
-//	//	Mat sampled_point_inf = tmpret.first, sampled_point_vis = tmpret.second;
-//	//	
-//	//	for (int i = 0; i < sampled_point_inf.size().height; i++)
-//	//	{
-//	//		vector<float> inf_part, vis_part;
-//	//		for (int j = sampled_point_inf.size().width - 1; j >= 0; j--)
-//	//		{
-//	//			inf_part.push_back(sampled_point_inf.at<float>(i, j));
-//	//			vis_part.push_back(sampled_point_vis.at<float>(i, j));
-//	//		}
-//	//		matched_points["inf"].push_back(inf_part);
-//	//		matched_points["vis"].push_back(vis_part);
-//	//	}
-//
-//	//	for (int i = 0; i < matched_points["inf"].size(); i++)
-//	//	{
-//	//		cout << matched_points["inf"][i][0] << ' ' << matched_points["inf"][i][1] << endl;
-//	//	}
-//
-//	//	for (auto x : rough_match_bbox)
-//	//	{
-//	//		cout << x << ' ';
-//	//	}
-//	//	cout << endl;
-//
-//	//		
-//	//}
-//	Mat a = Mat(2, 3, CV_32SC1);
-//	for (int i = 0; i < 2; i++)
+//	if (0 != _access(folderPath.c_str(), 0))
 //	{
-//		for (int j = 0; j < 3; j++)
-//		{
-//			a.at<int>(i, j) = i * 3 + j;
-//		}
+//		// if this folder not exist, create a new one.
+//		_mkdir(folderPath.c_str());   // 返回 0 表示创建成功，-1 表示失败
+//		//换成 ::_mkdir  ::_access 也行，不知道什么意思
 //	}
-//	//Mat res;
-//	//vector<Mat> mats(3, a);
-//	//merge(mats, res);
-//	//cout << res.size().height << ' ' << res.size().width << endl;
-//	//cout << res << endl;
 //
-//	cout << a << endl;
-//	a(Range(0, 2), Range(0, 2)) = a(Range(0, 2), Range(0, 2)) + 1;
-//	cout << a << endl;
 //
 //	return 0;
 //}
