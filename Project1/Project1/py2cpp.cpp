@@ -799,7 +799,7 @@ int main()
 	int id = 0;
 	for (string fn : inf_dir_listdir)
 	{
-	//	try 
+		try 
 		{
 			id++;
 			/*test*/
@@ -832,123 +832,81 @@ int main()
 			imwrite(fp, combine, compression_params);*/
 			
 			/*wait for testing*/
-			/*string inf_path = "./1656921335453_pinf.png";
-			string vis_path = "./1656921335453_pvis.png";
+			string inf_path = inf_dir + '/' + fn;
+			string vis_path = vis_dir + '/' + fn;
 
 			Mat im_inf = imread(inf_path);
-	//		cvtColor(im_inf, im_inf, CV_BGR2RGB);
+			cvtColor(im_inf, im_inf, CV_BGR2RGB);
 
-	//		Mat im_vis = imread(vis_path);
+			Mat im_vis = imread(vis_path);
 
-	//		Mat foreground;
-	//		resize(im_inf, foreground, Size(rough_match_bbox[3], rough_match_bbox[2]));
-	//		Mat background = im_vis(Range(rough_match_bbox[1], rough_match_bbox[1] + rough_match_bbox[2]), Range(rough_match_bbox[0], rough_match_bbox[0] + rough_match_bbox[3]));
+			Mat foreground;
+			resize(im_inf, foreground, Size(rough_match_bbox[3], rough_match_bbox[2]));
+			Mat background = im_vis(Range(rough_match_bbox[1], rough_match_bbox[1] + rough_match_bbox[2]), Range(rough_match_bbox[0], rough_match_bbox[0] + rough_match_bbox[3]));
 
-	//		int scaleMaxH = background.size().height, scaleMaxW = background.size().width;*/
+			int scaleMaxH = background.size().height, scaleMaxW = background.size().width;
 
-	//		//# Saving the warped infrared edges.
-	//		//resize(warped_e, warped_e, Size(480, 360));
-	//		//string newname = fn;
-	//		//int cut = 0;
-	//		//while (newname[cut] != '.' && cut < newname.size())
-	//		//{
-	//		//	cut++;
-	//		//}
-	//		//newname = newname.substr(0, cut) + ".png";
-	//		//string dir_path = "results/Seq" + to_string(SeqId) + "_warped_edge/";
-	//		//string fp = "./results/Seq" + to_string(SeqId) + "_warped_edge/" + newname;
+			//# Save img params
+			string newname = fn;
+			int cut = 0;
+			while (newname[cut] != '.' && cut < newname.size())
+			{
+				cut++;
+			}
+			newname = newname.substr(0, cut) + ".png";
+			string dir_path = "results/Seq" + to_string(SeqId) + "_warped_edge/";
+			string fp = "./results/Seq" + to_string(SeqId) + "_warped_edge/" + newname;
+			vector <int> compression_params;
+			compression_params.emplace_back(IMWRITE_PNG_COMPRESSION);
+			compression_params.emplace_back(0);
+			imwrite(fp, warped_e, compression_params);
+			
+			
+			// # Saving the warped infrared images.		
+			Mat warped;
+			/*
+			warped = warp_image_cv(foreground, matched_points['inf'], matched_points['vis'],dshape=(scaleMaxH, scaleMaxW))
+			*/
+			Mat matchpoint_inf((int)matched_points["inf"].size(), (int)matched_points["inf"][0].size(), CV_32SC1);
+			Mat matchpoint_vis((int)matched_points["vis"].size(), (int)matched_points["vis"][0].size(), CV_32SC1);
+			for (int i = 0; i < matched_points["inf"].size(); ++i)
+			{
+				for (int j = 0; j < matched_points["inf"][0].size(); ++j)
+				{
+					matchpoint_inf.at<int>(i, j) = matched_points["inf"][i][j];
+					matchpoint_vis.at<int>(i, j) = matched_points["vis"][i][j];
+				}
+			}
+			warp_image_cv(foreground, matchpoint_inf, matchpoint_vis, make_pair(scaleMaxH, scaleMaxW));
+			resize(warped, warped, Size(480, 360));
+			dir_path = "results/Seq" + to_string(SeqId) + "_warped/";
+			fp = "./results/Seq" + to_string(SeqId) + "_warped/" + newname;
+			makedir(dir_path);
+			imwrite(fp, warped, compression_params);
 
-	//		///*for debug*/
-	//		//newname = "1.png";
-	//		//mkdir(dir_path);
-	//		//vector <int> compression_params;
-	//		//compression_params.emplace_back(IMWRITE_PNG_COMPRESSION);
-	//		//compression_params.emplace_back(0);
-	//		//imwrite(fp, warped_e, compression_params);
-	//		
-	//		/*
-	//		# Saving the warped infrared images.
- //           warped = warp_image_cv(foreground, matched_points['inf'], matched_points['vis'],
- //                                  dshape=(scaleMaxH, scaleMaxW))
- //           warped = cv2.resize(warped, (480, 360))
- //           fp = os.path.join('./results', f'Seq{SeqId}_warped/' + fn.split('.')[0] + '.png')
- //           os.makedirs(os.path.dirname(fp), exist_ok=True)
- //           cv2.imwrite(fp, warped)
-	//		*/
-	//	//	Mat warped;
-	//	//	/*
-	//	//	
-	//	//	*/
-	//	//	Mat matchpoint_inf((int)matched_points["inf"].size(), (int)matched_points["inf"][0].size(), CV_32SC1);
-	//	//	Mat matchpoint_vis((int)matched_points["vis"].size(), (int)matched_points["vis"][0].size(), CV_32SC1);
-	//	//	for (int i = 0; i < matched_points["inf"].size(); ++i)
-	//	//	{
-	//	//		for (int j = 0; j < matched_points["inf"][0].size(); ++j)
-	//	//		{
-	//	//			matchpoint_inf.at<int>(i, j) = matched_points["inf"][i][j];
-	//	//			matchpoint_vis.at<int>(i, j) = matched_points["vis"][i][j];
-	//	//		}
-	//	//	}
-	//	//	warp_image_cv(foreground, matchpoint_inf, matchpoint_vis, make_pair(scaleMaxH, scaleMaxW));
-	//	//	resize(warped, warped, Size(480, 360));
-	//	//	dir_path = "results/Seq" + to_string(SeqId) + "_warped/";
-	//	//	fp = "./results/Seq" + to_string(SeqId) + "_warped/" + newname;
-	//	//	mkdir(dir_path);
-	//	//	imwrite(fp, warped, compression_params);
+			/*
+			# Saving the cropped visible images.
+			*/
+			resize(background, background, Size(480, 360));
+			dir_path = "results/Seq" + to_string(SeqId) + "_bg/";
+			fp = "./results/Seq" + to_string(SeqId) + "_bg/" + newname;
+			makedir(dir_path);
+			imwrite(fp, background, compression_params);
 
-	//	//	/*
-	//	//	# Saving the cropped visible images.
-	//	//	*/
-	//	//	resize(background, background, Size(480, 360));
-	//	//	dir_path = "results/Seq" + to_string(SeqId) + "_bg/";
-	//	//	fp = "./results/Seq" + to_string(SeqId) + "_bg/" + newname;
-	//	//	int ret = system(("mkdir -p " + dir_path).c_str());
-	//	//	if (ret && errno == EEXIST)
-	//	//	{
-	//	//		cerr << "dir << aleardy exist" << endl;
-	//	//	}
-	//	//	else if (ret == 0)
-	//	//	{
-	//	//		continue;
-	//	//	}
-	//	//	else
-	//	//	{
-	//	//		cout << "fail " << strerror(errno) << endl;
-	//	//	}
-	//	//	imwrite(fp, background, compression_params);
-
-	//	//	/*
-	//	//	# Saving the registered blended infrared-visible images.
- // //          warped = cv2.applyColorMap(warped, cv2.COLORMAP_JET)
- // //          matchVisualization(warped, background, (0, 0))
- // //          background = cv2.resize(background, (480, 360))
- // //          fp = os.path.join('./results', f'Seq{SeqId}_blended/' + fn.split('.')[0] + '.png')
- // //          os.makedirs(os.path.dirname(fp), exist_ok=True)
- // //          cv2.imwrite(fp, background)
-	//	//	*/
-	//	//	applyColorMap(warped, warped, COLORMAP_JET);
-	//	//	background = matchVisualization(warped, background, make_pair(0, 0));
-	//	//	resize(background, background, Size(480, 360));
-	//	//	dir_path = "results/Seq" + to_string(SeqId) + "_blended/";
-	//	//	fp = "./results/Seq" + to_string(SeqId) + "_blended/" + newname;
-	//	//	int ret = system(("mkdir -p " + dir_path).c_str());
-	//	//	if (ret && errno == EEXIST)
-	//	//	{
-	//	//		cerr << "dir << aleardy exist" << endl;
-	//	//	}
-	//	//	else if (ret == 0)
-	//	//	{
-	//	//		continue;
-	//	//	}
-	//	//	else
-	//	//	{
-	//	//		cout << "fail " << strerror(errno) << endl;
-	//	//	}
-	//	//	imwrite(fp, background, compression_params);
-	//	}
-	//	catch(...)
-	//	{
-	//		cout << "Exception :" << fn << endl;
+			/*
+			# Saving the registered blended infrared-visible images.
+			*/
+			applyColorMap(warped, warped, COLORMAP_JET);
+			background = matchVisualization(warped, background, make_pair(0, 0));
+			resize(background, background, Size(480, 360));
+			dir_path = "results/Seq" + to_string(SeqId) + "_blended/";
+			fp = "./results/Seq" + to_string(SeqId) + "_blended/" + newname;
+			makedir(dir_path);
+			imwrite(fp, background, compression_params);
+		}
+		catch(...)
+		{
+			cout << "Exception :" << fn << endl;
 		}
 	}
 
