@@ -222,8 +222,8 @@ float bbox_scaling_factor = 1.2;
 bool vis_edge_bbox_checked = false;
 
 // input cross domain paths
-string infe_dir = "./data/EdgeMaps/Seq{SeqId}/infrared";
-string vise_dir = "./data/EdgeMaps/Seq{SeqId}/visible";
+string infe_dir = "./data/EdgeMaps/Seq" + to_string(SeqId) + "/infrared";
+string vise_dir = "./data/EdgeMaps/Seq" + to_string(SeqId) + "/visible";
 
 string inf_dir = "./data/Preprocessed/Seq" + to_string(SeqId) + "/infrared";
 string vis_dir = "./data/Preprocessed/Seq" + to_string(SeqId) + "/visible_color";
@@ -238,7 +238,7 @@ void showimg(Mat img)
 	waitKey(0);
 }
 
-void mkdir(string path)
+void makedir(const string &path)
 {
 	if (0 != _access(path.c_str(), 0))
 	{
@@ -247,7 +247,7 @@ void mkdir(string path)
 	}
 }
 
-void listdir(string path, vector<string> &files)
+void listdir(const string &path, vector<string> &files)
 {
 	intptr_t hFile = 0;
 
@@ -259,42 +259,49 @@ void listdir(string path, vector<string> &files)
 		{
 			if (strcmp(fileinfo.name, ".") != 0 && strcmp(fileinfo.name, "..") != 0)
 			{
-				files.push_back(fileinfo.name);
+				files.emplace_back(fileinfo.name);
 			}
 		} while (_findnext(hFile, &fileinfo) == 0);
 		_findclose(hFile);
 	}
 }
 
-bool cmp(float a, float b)
+bool cmp(const float &a, const float &b)
 {
 	return a > b + eps;
 }
 
-vector<float> topk(Mat mat, int k)
+vector<float> topk(const Mat &mat, const int &k)
 {
-	mat = mat.reshape(1, 1);
 	vector<float> array;
-	for (int i = 0; i < mat.size().width; i++)
+	if (mat.isContinuous())
 	{
-		array.push_back(mat.at<float>(i));
+		array.assign(mat.datastart, mat.dataend);
+	}
+	else
+	{
+		for (int i = 0; i < mat.rows; ++i)
+		{
+			array.insert(array.end(), mat.ptr<float>(i), mat.ptr<float>(i) + mat.cols);
+		}
 	}
 
 	sort(array.begin(), array.end(), cmp);
 	if (array.size() > k)
 	{
 		vector<float> new_array;
-		for (int i = 0; i < k; i++)
-		{
-			new_array.push_back(array[i]);
-		}
-		array = new_array;
+		new_array.assign(array.begin(), array.begin() + k);
+		return new_array;
+	}
+	else
+	{
+		return array;
 	}
 
-	return array;
+	
 }
 
-void multiScaleMatchTemplate(Mat foreground, Mat background, int num_scales, float precision,           //default: num_scale=5, precision=0.1
+void multiScaleMatchTemplate(const Mat &foreground, const Mat &background, const int &num_scales, const float &precision,           //default: num_scale=5, precision=0.1
 							float &scaleMaxVal, Point &scaleMaxLoc, Mat &scaleMaxTpl, float &scaleMaxDif)
 {
 	/*
@@ -308,7 +315,6 @@ void multiScaleMatchTemplate(Mat foreground, Mat background, int num_scales, flo
     ----------
     """
 	*/
-
 	float scale_start = 1.0 - precision * (num_scales / 2);
 	float scale_end = 1.0 + precision * (num_scales / 2);
 	float distance = (scale_end - scale_start) / (num_scales - 1);
@@ -316,7 +322,7 @@ void multiScaleMatchTemplate(Mat foreground, Mat background, int num_scales, flo
 	vector<float> scales;
 	for (int cnt = 0; cnt < num_scales; val += distance, cnt++)
 	{
-		scales.push_back(val);
+		scales.emplace_back(val);
 	}
 	scaleMaxVal = -1;
 	
@@ -333,7 +339,7 @@ void multiScaleMatchTemplate(Mat foreground, Mat background, int num_scales, flo
 		// Good matches are expected to be unique.
 		vector<float> result_topk = topk(result, 5);
 		float topk_diff = 0;
-		for (int i = 1; i < result_topk.size(); i++)
+		for (int i = 1; i < result_topk.size(); ++i)
 		{
 			topk_diff += (abs(result_topk[i] - result_topk[i - 1]));
 		}
@@ -345,15 +351,15 @@ void multiScaleMatchTemplate(Mat foreground, Mat background, int num_scales, flo
 			scaleMaxDif = topk_diff;
 			scaleMaxVal = maxVal;
 			scaleMaxLoc = maxLoc;
-			scaleMaxTpl = tpl.clone();
+			tpl.copyTo(scaleMaxTpl);
 		}
 	}
 }
 
-vector<int> argsort(vector<float> &v, int st = -1) // default st = -1, st == -1 dec, st == 0 asc
+vector<int> argsort(const vector<float> &v, int st = -1) // default st = -1, st == -1 dec, st == 0 asc
 {
 	vector<pair<float, int>> tmp;
-	for (int i = 0; i < v.size(); i++) {
+	for (int i = 0; i < v.size(); ++i) {
 		tmp.emplace_back(make_pair(v[i], i));
 	}
 	if (st == 0)
@@ -366,117 +372,121 @@ vector<int> argsort(vector<float> &v, int st = -1) // default st = -1, st == -1 
 		});
 	}
 	vector<int> ret;
-	for (int i = 0; i < v.size(); i++) {
-		ret.push_back(tmp[i].second);
+	for (int i = 0; i < v.size(); ++i) {
+		ret.emplace_back(tmp[i].second);
 	}
 
 	return ret;
 }
 
-vector<int> nms(Mat boxes, vector<float> scores, float nms_thr)
+vector<int> nms(const Mat &boxes, const vector<float> &scores, const float &nms_thr)
 {
-	Mat x1 = boxes.col(0).clone().reshape(0, 1);
-	Mat y1 = boxes.col(1).clone().reshape(0, 1);
-	Mat x2 = boxes.col(2).clone().reshape(0, 1);
-	Mat y2 = boxes.col(3).clone().reshape(0, 1);
+	Mat x1 = boxes.col(0).clone().reshape(1, 1);
+	Mat y1 = boxes.col(1).clone().reshape(1, 1);
+	Mat x2 = boxes.col(2).clone().reshape(1, 1);
+	Mat y2 = boxes.col(3).clone().reshape(1, 1);
 
 	Mat areas = (x2 - x1 + 1).mul(y2 - y1 + 1);
+
 	vector<int> order = argsort(scores, -1);
 
-	vector<int> keep;
-	while (order.size() > 0)
+	map<int, int> mp_id; //map[idx] -> id_of_bbox
+	for (int i = 0; i < order.size(); ++i)
 	{
-		int i = order[0];
-		keep.push_back(i);
-		Mat xx1(1, order.size() - 1, CV_32SC1);
-		Mat yy1(1, order.size() - 1, CV_32SC1);
-		Mat xx2(1, order.size() - 1, CV_32SC1);
-		Mat yy2(1, order.size() - 1, CV_32SC1);
-		for (int j = 0; j < order.size() - 1; j++)
-		{
-			xx1.at<int>(j) = max(x1.at<int>(i), x1.at<int>(order[j + 1]));
-			yy1.at<int>(j) = max(y1.at<int>(i), y1.at<int>(order[j + 1]));
-			xx2.at<int>(j) = min(x2.at<int>(i), x2.at<int>(order[j + 1]));
-			yy2.at<int>(j) = min(y2.at<int>(i), y2.at<int>(order[j + 1]));
-		}
+		mp_id[i] = order[i];
+	}
 
-		Mat w = xx2 - xx1 + 1, h = yy2 - yy1 + 1;
-		for (int j = 0; j < w.size().width; j++)
+	vector<int> keep;
+	while (mp_id.size() > 0)
+	{
+		int i = (mp_id.begin()->second);
+		keep.emplace_back(i);
+		mp_id.erase(mp_id.begin());
+
+		int val_x1 = x1.at<int>(i), val_y1 = y1.at<int>(i), val_x2 = x2.at<int>(i), val_y2 = y2.at<int>(i);
+		for (map<int, int>::iterator it = mp_id.begin(); it != mp_id.end(); )
 		{
-			w.at<int>(j) = max(0, w.at<int>(j));
-			h.at<int>(j) = max(0, h.at<int>(j));
-		}
-		Mat inter = w.mul(h);
-		Mat areas_add(inter.size().height, inter.size().width, CV_32SC1, Scalar(areas.at<int>(i)));
-		for (int j = 0; j < inter.size().width; j++)
-		{
-			areas_add.at<int>(j) += areas.at<int>(order[j + 1]);
-		}
-		inter.convertTo(inter, CV_32FC1);
-		areas_add.convertTo(areas_add, CV_32FC1);
-		Mat ovr = inter / (areas_add - inter);
-		vector<int> neworder;
-		for (int j = 0; j < ovr.size().width; j++)
-		{
-			if (ovr.at<float>(j) <= nms_thr + eps)
+			int xx1 = 0, yy1 = 0, xx2 = 0, yy2 = 0;
+			int j = it->second; //id_of_bbox
+			xx1 = max(val_x1, x1.at<int>(j));
+			yy1 = max(val_y1, y1.at<int>(j));
+			xx2 = min(val_x2, x2.at<int>(j));
+			yy2 = min(val_y2, y2.at<int>(j));
+
+			int w = max(0, xx2 - xx1 + 1);
+			int h = max(0, yy2 - yy1 + 1);
+			int inter = w * h;
+			int area1 = areas.at<int>(i), area2 = areas.at<int>(j);
+			double ovr = (double)inter / (double)(area1 + area2 - inter);
+			
+			if (ovr > nms_thr + eps)
 			{
-				int ind = j;
-				neworder.push_back(order[ind + 1]);
+				it = mp_id.erase(it);
+			}
+			else
+			{
+				it++;
 			}
 		}
-		order = neworder;
 	}
+
 	return keep;
 }
 
 
-Mat gen_bboxes_from_edge_nms(Mat edge_map)
+Mat gen_bboxes_from_edge_nms(const Mat &edge_map)
 {
 	/*
 		Generating a bbox at the center of an edge pixel(`thres` as the threshold).
 		The window size is determined by `ws`.
 	*/
 	int H = edge_map.size().height, W = edge_map.size().width;
+
 	vector<int> indx, indy;
 	vector<float> weights;
-	for (int i = 0; i < H; i++)
+
+	for (int i = 0; i < H; ++i)
 	{
-		for (int j = 0; j < W; j++)
+		for (int j = 0; j < W; ++j)
 		{
 			if (edge_map.at<uchar>(i, j) > thres)
 			{
-				indx.push_back(i);
-				indy.push_back(j);
-				weights.push_back(edge_map.at<uchar>(i, j) / 255.0);
+				indx.emplace_back(i);
+				indy.emplace_back(j);
+				weights.emplace_back(edge_map.at<uchar>(i, j) / 255.0);
 			}
 		}
 	}
+	Mat mat_indx(indx), mat_indy(indy);
+	mat_indx.convertTo(mat_indx, CV_16UC1);
+	mat_indy.convertTo(mat_indy, CV_16UC1);
+	Mat edge_centers(indx.size(), 2, CV_16UC1, Scalar(0));
+	mat_indx.reshape(1, indx.size()).copyTo(edge_centers.col(0));
+	mat_indy.reshape(1, indy.size()).copyTo(edge_centers.col(1));
 
-	vector<pair<int, int>> edge_centers;
-	for (int i = 0; i < indx.size(); i++)
-	{
-		edge_centers.push_back(make_pair(indx[i], indy[i]));
-	}
-	
-	Mat bboxes = Mat::zeros(edge_centers.size(), 10, CV_32SC1);
-	for (int i = 0; i < edge_centers.size(); i++)
-	{
-		bboxes.at<int>(i, 0) = max(0, edge_centers[i].first - window_size / 2);
-		bboxes.at<int>(i, 1) = max(0, edge_centers[i].second - window_size / 2);
-		bboxes.at<int>(i, 2) = min(max(0, edge_centers[i].first + window_size / 2), H - 1);
-		bboxes.at<int>(i, 3) = min(max(0, edge_centers[i].second + window_size / 2), W - 1);
-		bboxes.at<int>(i, 4) = edge_centers[i].first;
-		bboxes.at<int>(i, 5) = edge_centers[i].second;
-		bboxes.at<int>(i, 6) = (bboxes.at<int>(i, 0) + bboxes.at<int>(i, 2)) / 2;
-		bboxes.at<int>(i, 7) = (bboxes.at<int>(i, 1) + bboxes.at<int>(i, 3)) / 2;
-		bboxes.at<int>(i, 8) = bboxes.at<int>(i, 2) - bboxes.at<int>(i, 0);
-		bboxes.at<int>(i, 9) = bboxes.at<int>(i, 3) - bboxes.at<int>(i, 1);
-	}
+
+	//long stt = clock();
+	Mat bboxes = Mat::zeros(edge_centers.rows, 10, CV_16UC1);
+	Mat tmp = edge_centers - window_size / 2;
+	tmp.copyTo(bboxes.colRange(0, 2));
+	cv::threshold(edge_centers.col(0) + window_size / 2, bboxes.col(2), H - 1, H - 1, THRESH_TRUNC);
+	cv::threshold(edge_centers.col(1) + window_size / 2, bboxes.col(3), W - 1, W - 1, THRESH_TRUNC);
+	edge_centers.copyTo(bboxes.colRange(4, 6));
+	tmp = (bboxes.col(0) + bboxes.col(2)) / 2;
+	tmp.copyTo(bboxes.col(6));
+	tmp = (bboxes.col(1) + bboxes.col(3)) / 2;
+	tmp.copyTo(bboxes.col(7));
+	bboxes.convertTo(bboxes, CV_32SC1);
+	tmp = bboxes.col(2) - bboxes.col(0);
+	tmp.copyTo(bboxes.col(8));
+	tmp = bboxes.col(3) - bboxes.col(1);
+	tmp.copyTo(bboxes.col(9));
+
 	// do NMS for generated bboxes.
 	vector<int> nms_indices = nms(bboxes, weights, nms_thres);
 	
 	Mat bboxes_nms(nms_indices.size(), 10, CV_32SC1);
-	for (int i = 0; i < nms_indices.size(); i++)
+	for (int i = 0; i < nms_indices.size(); ++i)
 	{
 		bboxes.row(nms_indices[i]).copyTo(bboxes_nms.row(i));
 	}
@@ -505,12 +515,11 @@ Mat gen_bboxes_from_edge_nms(Mat edge_map)
 		}
 		showimg(visu);
 	}
-	
 	return bboxes_nms;
 }
 
 
-vector<int> bbox_scaling(Mat bbox, float factor, int maxH, int maxW)
+vector<int> bbox_scaling(const Mat &bbox, const float &factor, const int &maxH, const int &maxW)
 {
 	/*
 	Scaling the `bbox` according to `factor`, maximum height and width
@@ -527,7 +536,7 @@ vector<int> bbox_scaling(Mat bbox, float factor, int maxH, int maxW)
 }
 
 
-pair<Mat, Mat> resampling_keypoints(Mat edge_map1, Mat edge_map2, Mat b1, Mat b2, int maxW = 1, int maxH = 1)
+pair<Mat, Mat> resampling_keypoints(const Mat &edge_map1, const Mat &edge_map2, const Mat &b1, const Mat &b2, const int &maxW = 1, const int &maxH = 1)
 {
 	/*
 	"""
@@ -546,54 +555,39 @@ pair<Mat, Mat> resampling_keypoints(Mat edge_map1, Mat edge_map2, Mat b1, Mat b2
 	Mat edge_map2_rect = edge_map2(Range(b2.at<int>(0), b2.at<int>(2) - shift_x), Range(b2.at<int>(1), b2.at<int>(3) - shift_y));
 
 	Mat edge_map1_mask = Mat(edge_map1_rect.size().height, edge_map1_rect.size().width, CV_8UC1);
+	threshold(edge_map1_rect, edge_map1_mask, thres, 1, THRESH_BINARY);
 	Mat edge_map2_mask = Mat(edge_map2_rect.size().height, edge_map2_rect.size().width, CV_8UC1);
-	for (int i = 0; i < edge_map1_rect.size().height; i++)
-	{
-		for (int j = 0; j < edge_map1_rect.size().width; j++)
-		{
-			edge_map1_mask.at<uchar>(i, j) = (edge_map1_rect.at<uchar>(i, j) > thres ? 1 : 0);
-		}
-	}
-	for (int i = 0; i < edge_map2_rect.size().height; i++)
-	{
-		for (int j = 0; j < edge_map2_rect.size().width; j++)
-		{
-			edge_map2_mask.at<uchar>(i, j) = (edge_map2_rect.at<uchar>(i, j) > thres ? 1 : 0);
-		}
-	}
+	threshold(edge_map2_rect, edge_map2_mask, thres, 1, THRESH_BINARY);
 
 	Mat logical_and = Mat(min(edge_map1_mask.size().height, edge_map2_mask.size().height),
 		min(edge_map1_mask.size().width, edge_map2_mask.size().width), CV_8UC1);
 	vector<int> indices[2];
 	vector<pair<float, float>> edge_centers;
-	for (int i = 0; i < logical_and.size().height; i++)
+	for (int i = 0; i < logical_and.size().height; ++i)
 	{
-		for (int j = 0; j < logical_and.size().width; j++)
+		auto mp1_mask_row = edge_map1_mask.ptr<uchar>(i);
+		auto mp2_mask_row = edge_map2_mask.ptr<uchar>(i);
+		for (int j = 0; j < logical_and.size().width; ++j)
 		{
-			if (edge_map1_mask.at<uchar>(i, j) + edge_map2_mask.at<uchar>(i, j) == 2)
+			if (mp1_mask_row[j] + mp2_mask_row[j] == 2)
 			{
-				logical_and.at<uchar>(i, j) = 1;
-				indices[0].push_back(i);
-				indices[1].push_back(j);
-				edge_centers.push_back(make_pair(i, j));
-			}
-			else
-			{
-				logical_and.at<uchar>(i, j) = 0;
+				indices[0].emplace_back(i);
+				indices[1].emplace_back(j);
+				edge_centers.emplace_back(make_pair(i, j));
 			}
 		}
 	}
 
 	//# shift the intersection indices w.r.t the whole edge map
 	Mat edge_centers1 = Mat(edge_centers.size(), 2, CV_32FC1, Scalar(0));
-	for (int i = 0; i < edge_centers.size(); i++)
+	for (int i = 0; i < edge_centers.size(); ++i)
 	{
 		edge_centers1.at<float>(i, 0) = edge_centers[i].first + b1.at<int>(0);
 		edge_centers1.at<float>(i, 1) = edge_centers[i].second + b1.at<int>(1);
 	}
 
 	Mat edge_centers2 = Mat(edge_centers.size(), 2, CV_32FC1, Scalar(0));
-	for (int i = 0; i < edge_centers.size(); i++)
+	for (int i = 0; i < edge_centers.size(); ++i)
 	{
 		edge_centers2.at<float>(i, 0) = edge_centers[i].first + b2.at<int>(0);
 		edge_centers2.at<float>(i, 1) = edge_centers[i].second + b2.at<int>(1);
@@ -601,14 +595,14 @@ pair<Mat, Mat> resampling_keypoints(Mat edge_map1, Mat edge_map2, Mat b1, Mat b2
 
 	//# the weights for the NMS
 	vector<float> weights;
-	for (int i = 0; i < indices[0].size(); i++)
+	for (int i = 0; i < indices[0].size(); ++i)
 	{
 		int x = indices[0][i], y = indices[1][i];
-		weights.push_back(((int)edge_map1.at<uchar>(x, y) + (int)edge_map2.at<uchar>(x, y)) / (255. * 2));
+		weights.emplace_back(((int)edge_map1.at<uchar>(x, y) + (int)edge_map2.at<uchar>(x, y)) / (255. * 2));
 	}
 	
 	Mat edge_bboxes1 = Mat(edge_centers1.size().height, 4, CV_32FC1, Scalar(0));
-	for (int i = 0; i < edge_bboxes1.size().height; i++)
+	for (int i = 0; i < edge_bboxes1.size().height; ++i)
 	{
 		edge_bboxes1.at<float>(i, 0) = max((float)0, edge_centers1.at<float>(i, 0) - local_ws / 2);
 		edge_bboxes1.at<float>(i, 1) = max((float)0, edge_centers1.at<float>(i, 1) - local_ws / 2);
@@ -624,21 +618,20 @@ pair<Mat, Mat> resampling_keypoints(Mat edge_map1, Mat edge_map2, Mat b1, Mat b2
 	}
 
 	Mat edge_centers_nms1(nms_indices.size(), 2, CV_32FC1), edge_centers_nms2(nms_indices.size(), 2, CV_32FC1);
-	for (int i = 0; i < nms_indices.size(); i++)
+	for (int i = 0; i < nms_indices.size(); ++i)
 	{
 		edge_centers1.row(nms_indices[i]).copyTo(edge_centers_nms1.row(i));
 		edge_centers2.row(nms_indices[i]).copyTo(edge_centers_nms2.row(i));
 	}
 
 	//# normalize the sampled points
-	for (int i = 0; i < edge_centers_nms1.size().height; i++)
+	for (int i = 0; i < edge_centers_nms1.size().height; ++i)
 	{
 		edge_centers_nms1.at<float>(i, 0) /= maxH;
 		edge_centers_nms1.at<float>(i, 1) /= maxW;
 		edge_centers_nms2.at<float>(i, 0) /= maxH;
 		edge_centers_nms2.at<float>(i, 1) /= maxW;
 	}
-
 	return make_pair(edge_centers_nms1, edge_centers_nms2);
 }
 
@@ -669,10 +662,10 @@ void tm_registration(Mat &Warped, vector<int> &Rough_match_bbox,
 	float scaleMaxDif;
 	multiScaleMatchTemplate(im_infe_gray, background, 5, 0.1, scaleMaxVal, scaleMaxLoc, scaleMaxTpl, scaleMaxDif);
 	vector<int> rough_match_bbox;
-	rough_match_bbox.push_back(scaleMaxLoc.x);
-	rough_match_bbox.push_back(scaleMaxLoc.y);
-	rough_match_bbox.push_back(scaleMaxTpl.size().height);
-	rough_match_bbox.push_back(scaleMaxTpl.size().width);
+	rough_match_bbox.emplace_back(scaleMaxLoc.x);
+	rough_match_bbox.emplace_back(scaleMaxLoc.y);
+	rough_match_bbox.emplace_back(scaleMaxTpl.size().height);
+	rough_match_bbox.emplace_back(scaleMaxTpl.size().width);
 
 
 	int tH = scaleMaxTpl.size().height, tW = scaleMaxTpl.size().width;
@@ -718,16 +711,16 @@ void tm_registration(Mat &Warped, vector<int> &Rough_match_bbox,
 			Mat sampled_point_inf = tmpret.first, sampled_point_vis = tmpret.second;
 
 
-			for (int i = 0; i < sampled_point_inf.size().height; i++)
+			for (int i = 0; i < sampled_point_inf.size().height; ++i)
 			{
 				vector<float> inf_part, vis_part;
 				for (int j = sampled_point_inf.size().width - 1; j >= 0; j--)
 				{
-					inf_part.push_back(sampled_point_inf.at<float>(i, j));
-					vis_part.push_back(sampled_point_vis.at<float>(i, j));
+					inf_part.emplace_back(sampled_point_inf.at<float>(i, j));
+					vis_part.emplace_back(sampled_point_vis.at<float>(i, j));
 				}
-				matched_points["inf"].push_back(inf_part);
-				matched_points["vis"].push_back(vis_part);
+				matched_points["inf"].emplace_back(inf_part);
+				matched_points["vis"].emplace_back(vis_part);
 			}
 		}
 	}
@@ -764,7 +757,7 @@ Mat matchVisualization(Mat Template, Mat background, pair<int, int> location, st
 	{
 		Mat zero_like_temp = Mat::zeros(Size(tH, tW), CV_8UC1);
 		vector<Mat> mats = (2, zero_like_temp.clone());
-		mats.push_back(Template);
+		mats.emplace_back(Template);
 		merge(mats, Template);
 	}
 	addWeighted(background(Range(location.second, location.second + tH), Range(location.first, location.first + tW)), 0.5, Template, 0.5, 3, 
@@ -788,8 +781,8 @@ Mat warp_image_cv(Mat img, Mat c_src, Mat c_dst, pair<int, int> dshape = make_pa
 	Mat grid = tps_grid(theta, c_dst, Size(dshape.first, dshape.second));
 	Mat mapx, mapy;
 	vector<Mat> mats;
-	mats.push_back(mapx);
-	mats.push_back(mapy);
+	mats.emplace_back(mapx);
+	mats.emplace_back(mapy);
 	tps_grid_to_remap(grid, mats, img.size().height, img.size().width);
 	Mat ret;
 	remap(img, ret, mapx, mapy, INTER_CUBIC, IPL_BORDER_REPLICATE);
@@ -798,32 +791,31 @@ Mat warp_image_cv(Mat img, Mat c_src, Mat c_dst, pair<int, int> dshape = make_pa
 }
 
 
-
 int main()
 {
-	vector<string> inf_dir_listdir(1);
+	vector<string> inf_dir_listdir;
 	listdir(inf_dir, inf_dir_listdir);
 	sort(inf_dir_listdir.begin(), inf_dir_listdir.end());
-
+	int id = 0;
 	for (string fn : inf_dir_listdir)
 	{
-		//try 
+	//	try 
 		{
+			id++;
 			/*test*/
-			infe_path = "./1656921335453_inf.png";
-			vise_path = "./1656921335453_vis.png";
-
+			infe_path = infe_dir + '/' + fn;
+			vise_path = vise_dir + '/' + fn;
+			cout << id << endl;
 			Mat warped_e;
 			vector<int> rough_match_bbox;
 			map<string, vector<vector<float>> > matched_points;
 			float score;
 			tm_registration(warped_e, rough_match_bbox, matched_points, score);
 
-
 			/* for debug*/
 			/*Mat combine, infimg = imread(infe_path), visimg = imread(vise_path);
 			hconcat(infimg, visimg, combine);
-			for (int i = 0; i < matched_points["inf"].size(); i++)
+			for (int i = 0; i < matched_points["inf"].size(); ++i)
 			{
 				
 				Point p1(matched_points["inf"][i][0] * infimg.size().width, matched_points["inf"][i][1] * infimg.size().height);
@@ -831,131 +823,134 @@ int main()
 				circle(combine, p1, 1, Scalar(255, 0, 0), 2);  
 				circle(combine, p2, 1, Scalar(255, 0, 0), 2);
 				line(combine, p1, p2, Scalar(0, 0, 255), 1);
-				
 			}
-			showimg(combine);*/
+			makedir("./test");
+			vector <int> compression_params;
+			compression_params.emplace_back(IMWRITE_PNG_COMPRESSION);
+			compression_params.emplace_back(0);
+			string fp = "./test/" + to_string(id) + ".png";
+			imwrite(fp, combine, compression_params);*/
 			
 			/*wait for testing*/
-			string inf_path = "./1656921335453_pinf.png";
+			/*string inf_path = "./1656921335453_pinf.png";
 			string vis_path = "./1656921335453_pvis.png";
 
 			Mat im_inf = imread(inf_path);
-			cvtColor(im_inf, im_inf, CV_BGR2RGB);
+	//		cvtColor(im_inf, im_inf, CV_BGR2RGB);
 
-			Mat im_vis = imread(vis_path);
+	//		Mat im_vis = imread(vis_path);
 
-			Mat foreground;
-			resize(im_inf, foreground, Size(rough_match_bbox[3], rough_match_bbox[2]));
-			Mat background = im_vis(Range(rough_match_bbox[1], rough_match_bbox[1] + rough_match_bbox[2]), Range(rough_match_bbox[0], rough_match_bbox[0] + rough_match_bbox[3]));
+	//		Mat foreground;
+	//		resize(im_inf, foreground, Size(rough_match_bbox[3], rough_match_bbox[2]));
+	//		Mat background = im_vis(Range(rough_match_bbox[1], rough_match_bbox[1] + rough_match_bbox[2]), Range(rough_match_bbox[0], rough_match_bbox[0] + rough_match_bbox[3]));
 
-			int scaleMaxH = background.size().height, scaleMaxW = background.size().width;
+	//		int scaleMaxH = background.size().height, scaleMaxW = background.size().width;*/
 
-			//# Saving the warped infrared edges.
-			//resize(warped_e, warped_e, Size(480, 360));
-			string newname = fn;
-			int cut = 0;
-			while (newname[cut] != '.' && cut < newname.size())
-			{
-				cut++;
-			}
-			newname = newname.substr(0, cut) + ".png";
-			string dir_path = "results/Seq" + to_string(SeqId) + "_warped_edge/";
-			string fp = "./results/Seq" + to_string(SeqId) + "_warped_edge/" + newname;
+	//		//# Saving the warped infrared edges.
+	//		//resize(warped_e, warped_e, Size(480, 360));
+	//		//string newname = fn;
+	//		//int cut = 0;
+	//		//while (newname[cut] != '.' && cut < newname.size())
+	//		//{
+	//		//	cut++;
+	//		//}
+	//		//newname = newname.substr(0, cut) + ".png";
+	//		//string dir_path = "results/Seq" + to_string(SeqId) + "_warped_edge/";
+	//		//string fp = "./results/Seq" + to_string(SeqId) + "_warped_edge/" + newname;
 
-			/*for debug*/
-			newname = "1.png";
-			mkdir(dir_path);
-			vector <int> compression_params;
-			compression_params.push_back(IMWRITE_PNG_COMPRESSION);
-			compression_params.push_back(0);
-			//imwrite(fp, warped_e, compression_params);
-			
-			///*
-			//# Saving the warped infrared images.
-   //         warped = warp_image_cv(foreground, matched_points['inf'], matched_points['vis'],
-   //                                dshape=(scaleMaxH, scaleMaxW))
-   //         warped = cv2.resize(warped, (480, 360))
-   //         fp = os.path.join('./results', f'Seq{SeqId}_warped/' + fn.split('.')[0] + '.png')
-   //         os.makedirs(os.path.dirname(fp), exist_ok=True)
-   //         cv2.imwrite(fp, warped)
-			//*/
-			Mat warped;
-			/*
-			
-			*/
-			Mat matchpoint_inf((int)matched_points["inf"].size(), (int)matched_points["inf"][0].size(), CV_32SC1);
-			Mat matchpoint_vis((int)matched_points["vis"].size(), (int)matched_points["vis"][0].size(), CV_32SC1);
-			for (int i = 0; i < matched_points["inf"].size(); i++)
-			{
-				for (int j = 0; j < matched_points["inf"][0].size(); j++)
-				{
-					matchpoint_inf.at<int>(i, j) = matched_points["inf"][i][j];
-					matchpoint_vis.at<int>(i, j) = matched_points["vis"][i][j];
-				}
-			}
-			warp_image_cv(foreground, matchpoint_inf, matchpoint_vis, make_pair(scaleMaxH, scaleMaxW));
-			resize(warped, warped, Size(480, 360));
-			dir_path = "results/Seq" + to_string(SeqId) + "_warped/";
-			fp = "./results/Seq" + to_string(SeqId) + "_warped/" + newname;
-			mkdir(dir_path);
-			imwrite(fp, warped, compression_params);
+	//		///*for debug*/
+	//		//newname = "1.png";
+	//		//mkdir(dir_path);
+	//		//vector <int> compression_params;
+	//		//compression_params.emplace_back(IMWRITE_PNG_COMPRESSION);
+	//		//compression_params.emplace_back(0);
+	//		//imwrite(fp, warped_e, compression_params);
+	//		
+	//		/*
+	//		# Saving the warped infrared images.
+ //           warped = warp_image_cv(foreground, matched_points['inf'], matched_points['vis'],
+ //                                  dshape=(scaleMaxH, scaleMaxW))
+ //           warped = cv2.resize(warped, (480, 360))
+ //           fp = os.path.join('./results', f'Seq{SeqId}_warped/' + fn.split('.')[0] + '.png')
+ //           os.makedirs(os.path.dirname(fp), exist_ok=True)
+ //           cv2.imwrite(fp, warped)
+	//		*/
+	//	//	Mat warped;
+	//	//	/*
+	//	//	
+	//	//	*/
+	//	//	Mat matchpoint_inf((int)matched_points["inf"].size(), (int)matched_points["inf"][0].size(), CV_32SC1);
+	//	//	Mat matchpoint_vis((int)matched_points["vis"].size(), (int)matched_points["vis"][0].size(), CV_32SC1);
+	//	//	for (int i = 0; i < matched_points["inf"].size(); ++i)
+	//	//	{
+	//	//		for (int j = 0; j < matched_points["inf"][0].size(); ++j)
+	//	//		{
+	//	//			matchpoint_inf.at<int>(i, j) = matched_points["inf"][i][j];
+	//	//			matchpoint_vis.at<int>(i, j) = matched_points["vis"][i][j];
+	//	//		}
+	//	//	}
+	//	//	warp_image_cv(foreground, matchpoint_inf, matchpoint_vis, make_pair(scaleMaxH, scaleMaxW));
+	//	//	resize(warped, warped, Size(480, 360));
+	//	//	dir_path = "results/Seq" + to_string(SeqId) + "_warped/";
+	//	//	fp = "./results/Seq" + to_string(SeqId) + "_warped/" + newname;
+	//	//	mkdir(dir_path);
+	//	//	imwrite(fp, warped, compression_params);
 
-			///*
-			//# Saving the cropped visible images.
-			//*/
-			//resize(background, background, Size(480, 360));
-			//dir_path = "results/Seq" + to_string(SeqId) + "_bg/";
-			//fp = "./results/Seq" + to_string(SeqId) + "_bg/" + newname;
-			//int ret = system(("mkdir -p " + dir_path).c_str());
-			//if (ret && errno == EEXIST)
-			//{
-			//	cerr << "dir << aleardy exist" << endl;
-			//}
-			//else if (ret == 0)
-			//{
-			//	continue;
-			//}
-			//else
-			//{
-			//	cout << "fail " << strerror(errno) << endl;
-			//}
-			//imwrite(fp, background, compression_params);
+	//	//	/*
+	//	//	# Saving the cropped visible images.
+	//	//	*/
+	//	//	resize(background, background, Size(480, 360));
+	//	//	dir_path = "results/Seq" + to_string(SeqId) + "_bg/";
+	//	//	fp = "./results/Seq" + to_string(SeqId) + "_bg/" + newname;
+	//	//	int ret = system(("mkdir -p " + dir_path).c_str());
+	//	//	if (ret && errno == EEXIST)
+	//	//	{
+	//	//		cerr << "dir << aleardy exist" << endl;
+	//	//	}
+	//	//	else if (ret == 0)
+	//	//	{
+	//	//		continue;
+	//	//	}
+	//	//	else
+	//	//	{
+	//	//		cout << "fail " << strerror(errno) << endl;
+	//	//	}
+	//	//	imwrite(fp, background, compression_params);
 
-			///*
-			//# Saving the registered blended infrared-visible images.
-   //         warped = cv2.applyColorMap(warped, cv2.COLORMAP_JET)
-   //         matchVisualization(warped, background, (0, 0))
-   //         background = cv2.resize(background, (480, 360))
-   //         fp = os.path.join('./results', f'Seq{SeqId}_blended/' + fn.split('.')[0] + '.png')
-   //         os.makedirs(os.path.dirname(fp), exist_ok=True)
-   //         cv2.imwrite(fp, background)
-			//*/
-			//applyColorMap(warped, warped, COLORMAP_JET);
-			//background = matchVisualization(warped, background, make_pair(0, 0));
-			//resize(background, background, Size(480, 360));
-			//dir_path = "results/Seq" + to_string(SeqId) + "_blended/";
-			//fp = "./results/Seq" + to_string(SeqId) + "_blended/" + newname;
-			//int ret = system(("mkdir -p " + dir_path).c_str());
-			//if (ret && errno == EEXIST)
-			//{
-			//	cerr << "dir << aleardy exist" << endl;
-			//}
-			//else if (ret == 0)
-			//{
-			//	continue;
-			//}
-			//else
-			//{
-			//	cout << "fail " << strerror(errno) << endl;
-			//}
-			//imwrite(fp, background, compression_params);
+	//	//	/*
+	//	//	# Saving the registered blended infrared-visible images.
+ // //          warped = cv2.applyColorMap(warped, cv2.COLORMAP_JET)
+ // //          matchVisualization(warped, background, (0, 0))
+ // //          background = cv2.resize(background, (480, 360))
+ // //          fp = os.path.join('./results', f'Seq{SeqId}_blended/' + fn.split('.')[0] + '.png')
+ // //          os.makedirs(os.path.dirname(fp), exist_ok=True)
+ // //          cv2.imwrite(fp, background)
+	//	//	*/
+	//	//	applyColorMap(warped, warped, COLORMAP_JET);
+	//	//	background = matchVisualization(warped, background, make_pair(0, 0));
+	//	//	resize(background, background, Size(480, 360));
+	//	//	dir_path = "results/Seq" + to_string(SeqId) + "_blended/";
+	//	//	fp = "./results/Seq" + to_string(SeqId) + "_blended/" + newname;
+	//	//	int ret = system(("mkdir -p " + dir_path).c_str());
+	//	//	if (ret && errno == EEXIST)
+	//	//	{
+	//	//		cerr << "dir << aleardy exist" << endl;
+	//	//	}
+	//	//	else if (ret == 0)
+	//	//	{
+	//	//		continue;
+	//	//	}
+	//	//	else
+	//	//	{
+	//	//		cout << "fail " << strerror(errno) << endl;
+	//	//	}
+	//	//	imwrite(fp, background, compression_params);
+	//	}
+	//	catch(...)
+	//	{
+	//		cout << "Exception :" << fn << endl;
 		}
-		//catch(...)
-		//{
-		//	cout << "Exception :" << fn << endl;
-		//}
 	}
-	
 
 	return 0;
 }

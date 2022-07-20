@@ -445,14 +445,15 @@
 //
 //int main()
 //{
-//	string folderPath = "./testFolder";
+//	Mat a = Mat(2, 3, CV_32SC1, Scalar(0));
+//	Mat b = (Mat_<int>(2, 3) << 1, 2, 3, 4, 5, 6);
 //
-//	if (0 != _access(folderPath.c_str(), 0))
-//	{
-//		// if this folder not exist, create a new one.
-//		_mkdir(folderPath.c_str());   // 返回 0 表示创建成功，-1 表示失败
-//		//换成 ::_mkdir  ::_access 也行，不知道什么意思
-//	}
+//	Mat x1;
+//	b.row(0).reshape(0, 1).copyTo(x1);
+//	cout << x1 << endl;
+//	x1.at<int>(0, 0) = 100;
+//	cout << x1 << endl;
+//	cout << b << endl;
 //
 //
 //	return 0;
